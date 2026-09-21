@@ -1,9 +1,15 @@
 streamlit>=1.38,<2
 langchain-community>=0.3,<0.4
 langchain-text-splitters>=0.3,<0.4
-pypdf>=4.3
-fonttools>=4.53
-fastembed>=0.3
+pypdf>=4.3,<6
+# Pinned explicitly and BEFORE fastembed/chromadb: both of those depend on
+# tokenizers, and without this pin pip/uv resolves down to tokenizers==0.20.3
+# (needed by chromadb's older range) which has no prebuilt wheel for newer
+# Python versions (e.g. 3.14 on Streamlit Cloud) and fails trying to compile
+# from Rust source. 0.23.2+ ships a cp310-abi3 wheel that works on any
+# Python >= 3.10, so pinning here avoids the source build entirely.
+tokenizers>=0.21,<1.0
+fastembed>=0.3,<0.6
+groq>=0.11,<1
 chromadb>=0.5,<0.6
-groq>=0.11
- 
+pysqlite3-binary
