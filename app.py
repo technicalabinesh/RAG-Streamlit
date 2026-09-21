@@ -19,58 +19,23 @@ st.set_page_config(
 )
 
 # -----------------------------------------------------------------------------
-# 2. COMPLETE BRIDGEAI CSS THEME (Overrides Dark Mode + Adds Nature Landscape)
+# 2. COMPLETE THEME OVERRIDES (Fixes all dark boxes)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
-    /* Global reset & forcing Light nature background */
+    /* Global App Reset */
     html, body, [class*="css"], .stApp {
         font-family: 'Plus Jakarta Sans', sans-serif !important;
-        background-color: #F3F5EE !important;
+        background-color: #F4F6F0 !important;
         color: #17281D !important;
     }
 
-    /* Background Landscape Hero Effect */
+    /* Background Landscape Glow */
     .stApp {
         background: 
-            radial-gradient(ellipse at 50% 30%, rgba(255, 255, 255, 0.9) 0%, rgba(240, 244, 235, 0.95) 70%, rgba(220, 230, 215, 0.98) 100%),
-            url('https://images.unsplash.com/photo-1518457607834-6e8d80c183c5?auto=format&fit=crop&w=1600&q=80') center center / cover no-repeat fixed !important;
-    }
-
-    /* Force Sidebar Styling - High Contrast */
-    section[data-testid="stSidebar"] {
-        background-color: #E8EDE1 !important;
-        border-right: 1px solid rgba(46, 80, 56, 0.12) !important;
-    }
-    
-    section[data-testid="stSidebar"] * {
-        color: #1A3323 !important;
-    }
-
-    section[data-testid="stSidebar"] h1, 
-    section[data-testid="stSidebar"] h2, 
-    section[data-testid="stSidebar"] h3, 
-    section[data-testid="stSidebar"] h4 {
-        color: #1A3323 !important;
-        font-weight: 700 !important;
-    }
-
-    /* Sidebar Inputs */
-    section[data-testid="stSidebar"] input,
-    section[data-testid="stSidebar"] div[data-baseweb="select"] {
-        background-color: #FFFFFF !important;
-        color: #1A3323 !important;
-        border: 1px solid #BAC9B6 !important;
-        border-radius: 12px !important;
-    }
-
-    /* Sidebar Uploader */
-    section[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
-        background-color: #FFFFFF !important;
-        border: 2px dashed #9CB69B !important;
-        border-radius: 16px !important;
+            radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0.92) 0%, rgba(244, 246, 240, 0.95) 65%, rgba(226, 235, 222, 0.98) 100%) !important;
     }
 
     /* Top Capsule Navigation */
@@ -79,13 +44,12 @@ st.markdown("""
         justify-content: space-between;
         align-items: center;
         padding: 10px 24px;
-        background: rgba(255, 255, 255, 0.88);
+        background: rgba(255, 255, 255, 0.95);
         backdrop-filter: blur(14px);
-        -webkit-backdrop-filter: blur(14px);
         border: 1px solid rgba(255, 255, 255, 0.9);
         border-radius: 9999px;
         box-shadow: 0 4px 20px rgba(34, 66, 41, 0.08);
-        margin: 0.5rem auto 2.5rem auto;
+        margin: 0.5rem auto 2rem auto;
         max-width: 1100px;
     }
 
@@ -113,24 +77,23 @@ st.markdown("""
         text-decoration: none;
         font-weight: 600;
         font-size: 0.85rem;
-        box-shadow: 0 4px 12px rgba(28, 56, 37, 0.2);
     }
 
     /* Hero Section */
     .hero-container {
         text-align: center;
-        padding: 2.5rem 1rem 2rem 1rem;
+        padding: 2rem 1rem 1.5rem 1rem;
         max-width: 950px;
-        margin: 0 auto 2rem auto;
+        margin: 0 auto 1.5rem auto;
     }
 
     .hero-title {
-        font-size: 3.8rem;
+        font-size: 3.6rem;
         font-weight: 700;
         line-height: 1.12;
         letter-spacing: -1.8px;
         color: #1C3825;
-        margin-bottom: 1.2rem;
+        margin-bottom: 1rem;
     }
 
     .hero-title span {
@@ -139,11 +102,87 @@ st.markdown("""
     }
 
     .hero-subtitle {
-        font-size: 1.2rem;
+        font-size: 1.15rem;
         color: #435E4B;
         max-width: 650px;
-        margin: 0 auto 2rem auto;
+        margin: 0 auto 1.5rem auto;
         line-height: 1.6;
+    }
+
+    /* ---------------- SIDEBAR LIGHT THEME FIXES ---------------- */
+    section[data-testid="stSidebar"] {
+        background-color: #E8EDE1 !important;
+        border-right: 1px solid rgba(46, 80, 56, 0.12) !important;
+    }
+    
+    section[data-testid="stSidebar"] * {
+        color: #1A3323 !important;
+    }
+
+    /* Fix API Key input and model select box */
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] div[data-baseweb="input"],
+    section[data-testid="stSidebar"] div[data-baseweb="select"],
+    section[data-testid="stSidebar"] div[data-baseweb="select"] > div {
+        background-color: #FFFFFF !important;
+        color: #1A3323 !important;
+        border-color: #BAC9B6 !important;
+        border-radius: 12px !important;
+    }
+
+    /* ---------------- FIX FILE UPLOADER (NO MORE DARK BOX) ---------------- */
+    [data-testid="stFileUploader"] {
+        background-color: transparent !important;
+    }
+
+    [data-testid="stFileUploader"] section {
+        background-color: #FFFFFF !important;
+        border: 2px dashed #9CB69B !important;
+        border-radius: 16px !important;
+        padding: 1.2rem !important;
+    }
+
+    [data-testid="stFileUploader"] section * {
+        color: #1A3323 !important;
+    }
+
+    [data-testid="stFileUploader"] button {
+        background-color: #EBF1E8 !important;
+        color: #1A3323 !important;
+        border: 1px solid #9CB69B !important;
+        border-radius: 9999px !important;
+        font-weight: 600 !important;
+    }
+
+    /* ---------------- FIX CHAT INPUT BOX (NO MORE DARK BAR) ---------------- */
+    div[data-testid="stChatInput"] {
+        background: transparent !important;
+        border: none !important;
+    }
+
+    div[data-testid="stChatInput"] > div {
+        background-color: #FFFFFF !important;
+        border: 1.5px solid #BAC9B6 !important;
+        border-radius: 9999px !important;
+        box-shadow: 0 4px 20px rgba(34, 66, 41, 0.08) !important;
+        padding: 4px 14px !important;
+    }
+
+    div[data-testid="stChatInput"] textarea {
+        background-color: transparent !important;
+        color: #1A3323 !important;
+        font-size: 0.95rem !important;
+    }
+
+    div[data-testid="stChatInput"] textarea::placeholder {
+        color: #6C8272 !important;
+    }
+
+    div[data-testid="stChatInput"] button {
+        background-color: #1C3825 !important;
+        color: #FFFFFF !important;
+        border-radius: 50% !important;
+        border: none !important;
     }
 
     /* Buttons */
@@ -155,22 +194,20 @@ st.markdown("""
         padding: 0.6rem 1.8rem !important;
         font-weight: 600 !important;
         box-shadow: 0 4px 14px rgba(28, 56, 37, 0.2) !important;
-        transition: all 0.2s ease-in-out !important;
     }
 
     div[data-testid="stButton"] > button:hover {
         background: #2E5839 !important;
-        transform: translateY(-2px);
     }
 
     /* Chat Messages */
     div[data-testid="stChatMessage"] {
-        background: rgba(255, 255, 255, 0.85) !important;
+        background: rgba(255, 255, 255, 0.9) !important;
         border-radius: 18px !important;
         border: 1px solid rgba(255, 255, 255, 0.95) !important;
-        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
-        padding: 1.2rem !important;
-        margin-bottom: 1rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.04);
+        padding: 1rem 1.4rem !important;
+        margin-bottom: 0.8rem;
         color: #1C3825 !important;
     }
 
@@ -218,7 +255,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 4. FAST & CRASH-PROOF EMBEDDING MODEL
+# 4. EMBEDDINGS MODEL
 # -----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def load_embedding_model():
@@ -295,7 +332,7 @@ class RAGRetriever:
         return found
 
 # -----------------------------------------------------------------------------
-# 6. SIDEBAR CONTROLS (Clean High Contrast)
+# 6. SIDEBAR CONTROLS
 # -----------------------------------------------------------------------------
 with st.sidebar:
     st.markdown("### 🌿 **BridgeCore™ Engine**")
@@ -304,7 +341,7 @@ with st.sidebar:
         "Groq API Key",
         type="password",
         value=os.getenv("GROQ_API_KEY", ""),
-        help="Get your free key at https://console.groq.com"
+        help="Get your key at https://console.groq.com"
     )
 
     model_name = st.selectbox(
@@ -396,7 +433,7 @@ for message in st.session_state.messages:
             )
             st.markdown(f"<div style='margin-top:6px;'>{chips_html}</div>", unsafe_allow_html=True)
 
-# Chat Input
+# Chat Input Box
 if prompt := st.chat_input("Ask any question grounded in your documents..."):
     if not st.session_state.retriever:
         st.warning("Please upload and index PDF documents first in the sidebar.")
