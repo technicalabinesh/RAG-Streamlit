@@ -1,3 +1,14 @@
+try:
+    __import__("pysqlite3")
+    import sys
+    sys.modules["sqlite3"] = sys.modules.pop("pysqlite3")
+except ImportError:
+    # Falls back to system sqlite3. If chromadb still fails to import with
+    # a "sqlite3 version too old" error, make sure pysqlite3-binary is in
+    # requirements.txt and that this shim ran before chromadb is imported
+    # anywhere (it must be the very first thing in this file).
+    pass
+
 import os
 import uuid
 import tempfile
