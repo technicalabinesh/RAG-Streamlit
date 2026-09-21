@@ -5,40 +5,72 @@ import streamlit as st
 from pathlib import Path
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_groq import ChatGroq
 from fastembed import TextEmbedding
+from groq import Groq
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="BridgeAI — Groq Data & Document Intelligence",
+    page_title="BridgeAI — Data and Decisions",
     page_icon="🌿",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # -----------------------------------------------------------------------------
-# 2. BRIDGEAI STYLING & THEME (CSS)
+# 2. COMPLETE BRIDGEAI CSS THEME (Overrides Dark Mode + Adds Nature Landscape)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,600;1,400&display=swap');
 
-    :root {
-        --primary-green: #224229;
-        --accent-green: #3B6B48;
-        --light-sage: #8DAA91;
-        --bg-warm: #F4F6F0;
-        --card-bg: rgba(255, 255, 255, 0.75);
-        --text-dark: #19241C;
-        --text-muted: #526356;
+    /* Global reset & forcing Light nature background */
+    html, body, [class*="css"], .stApp {
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        background-color: #F3F5EE !important;
+        color: #17281D !important;
     }
 
+    /* Background Landscape Hero Effect */
     .stApp {
-        background: radial-gradient(circle at 50% 10%, #E7EDE0 0%, #F5F7F2 60%, #EBF0E6 100%);
-        font-family: 'Plus Jakarta Sans', sans-serif;
-        color: var(--text-dark);
+        background: 
+            radial-gradient(ellipse at 50% 30%, rgba(255, 255, 255, 0.9) 0%, rgba(240, 244, 235, 0.95) 70%, rgba(220, 230, 215, 0.98) 100%),
+            url('https://images.unsplash.com/photo-1518457607834-6e8d80c183c5?auto=format&fit=crop&w=1600&q=80') center center / cover no-repeat fixed !important;
+    }
+
+    /* Force Sidebar Styling - High Contrast */
+    section[data-testid="stSidebar"] {
+        background-color: #E8EDE1 !important;
+        border-right: 1px solid rgba(46, 80, 56, 0.12) !important;
+    }
+    
+    section[data-testid="stSidebar"] * {
+        color: #1A3323 !important;
+    }
+
+    section[data-testid="stSidebar"] h1, 
+    section[data-testid="stSidebar"] h2, 
+    section[data-testid="stSidebar"] h3, 
+    section[data-testid="stSidebar"] h4 {
+        color: #1A3323 !important;
+        font-weight: 700 !important;
+    }
+
+    /* Sidebar Inputs */
+    section[data-testid="stSidebar"] input,
+    section[data-testid="stSidebar"] div[data-baseweb="select"] {
+        background-color: #FFFFFF !important;
+        color: #1A3323 !important;
+        border: 1px solid #BAC9B6 !important;
+        border-radius: 12px !important;
+    }
+
+    /* Sidebar Uploader */
+    section[data-testid="stSidebar"] [data-testid="stFileUploader"] section {
+        background-color: #FFFFFF !important;
+        border: 2px dashed #9CB69B !important;
+        border-radius: 16px !important;
     }
 
     /* Top Capsule Navigation */
@@ -47,120 +79,131 @@ st.markdown("""
         justify-content: space-between;
         align-items: center;
         padding: 10px 24px;
-        background: rgba(255, 255, 255, 0.85);
-        backdrop-filter: blur(12px);
-        border: 1px solid rgba(255, 255, 255, 0.6);
+        background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(14px);
+        -webkit-backdrop-filter: blur(14px);
+        border: 1px solid rgba(255, 255, 255, 0.9);
         border-radius: 9999px;
-        box-shadow: 0 4px 20px rgba(34, 66, 41, 0.06);
-        margin-bottom: 2rem;
+        box-shadow: 0 4px 20px rgba(34, 66, 41, 0.08);
+        margin: 0.5rem auto 2.5rem auto;
+        max-width: 1100px;
     }
 
     .nav-logo {
         font-weight: 800;
-        font-size: 1.3rem;
-        color: var(--primary-green);
+        font-size: 1.35rem;
+        color: #1C3825;
         letter-spacing: -0.5px;
     }
 
     .nav-menu {
         display: flex;
-        gap: 1.5rem;
+        gap: 1.8rem;
         align-items: center;
-        font-size: 0.9rem;
+        font-size: 0.92rem;
         font-weight: 500;
-        color: var(--text-muted);
+        color: #556B5C;
     }
 
     .nav-pill-btn {
-        background: var(--primary-green) !important;
-        color: #fff !important;
-        padding: 6px 18px !important;
+        background: #1C3825 !important;
+        color: #FFFFFF !important;
+        padding: 7px 20px !important;
         border-radius: 9999px !important;
         text-decoration: none;
         font-weight: 600;
         font-size: 0.85rem;
+        box-shadow: 0 4px 12px rgba(28, 56, 37, 0.2);
     }
 
     /* Hero Section */
     .hero-container {
         text-align: center;
         padding: 2.5rem 1rem 2rem 1rem;
-        max-width: 900px;
-        margin: 0 auto;
+        max-width: 950px;
+        margin: 0 auto 2rem auto;
     }
 
     .hero-title {
-        font-size: 3.2rem;
+        font-size: 3.8rem;
         font-weight: 700;
-        line-height: 1.15;
-        letter-spacing: -1.5px;
-        color: var(--primary-green);
-        margin-bottom: 1rem;
+        line-height: 1.12;
+        letter-spacing: -1.8px;
+        color: #1C3825;
+        margin-bottom: 1.2rem;
     }
 
     .hero-title span {
-        color: var(--light-sage);
+        color: #729E7D;
         font-weight: 400;
     }
 
     .hero-subtitle {
-        font-size: 1.15rem;
-        color: var(--text-muted);
-        max-width: 620px;
+        font-size: 1.2rem;
+        color: #435E4B;
+        max-width: 650px;
         margin: 0 auto 2rem auto;
         line-height: 1.6;
     }
 
-    .stSidebar {
-        background-color: #EBF0E6 !important;
-        border-right: 1px solid rgba(34, 66, 41, 0.08);
-    }
-
+    /* Buttons */
     div[data-testid="stButton"] > button {
-        background-color: var(--primary-green) !important;
+        background: #1C3825 !important;
         color: white !important;
         border-radius: 9999px !important;
         border: none !important;
-        padding: 0.55rem 1.4rem !important;
+        padding: 0.6rem 1.8rem !important;
         font-weight: 600 !important;
+        box-shadow: 0 4px 14px rgba(28, 56, 37, 0.2) !important;
+        transition: all 0.2s ease-in-out !important;
     }
 
+    div[data-testid="stButton"] > button:hover {
+        background: #2E5839 !important;
+        transform: translateY(-2px);
+    }
+
+    /* Chat Messages */
     div[data-testid="stChatMessage"] {
-        background: rgba(255, 255, 255, 0.8) !important;
-        border-radius: 16px !important;
-        border: 1px solid rgba(255, 255, 255, 0.9) !important;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.03);
-        margin-bottom: 0.8rem;
+        background: rgba(255, 255, 255, 0.85) !important;
+        border-radius: 18px !important;
+        border: 1px solid rgba(255, 255, 255, 0.95) !important;
+        box-shadow: 0 6px 20px rgba(0, 0, 0, 0.04);
+        padding: 1.2rem !important;
+        margin-bottom: 1rem;
+        color: #1C3825 !important;
     }
 
+    /* Source Chips */
     .source-chip {
         display: inline-block;
-        background: #E2ECE1;
-        color: var(--primary-green);
-        padding: 3px 10px;
+        background: #E3EDE2;
+        color: #1C3825;
+        border: 1px solid #C4D9C2;
+        padding: 4px 12px;
         border-radius: 12px;
-        font-size: 0.8rem;
+        font-size: 0.82rem;
         font-weight: 600;
         margin-right: 6px;
-        margin-top: 4px;
+        margin-top: 6px;
     }
 </style>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 3. TOP NAVIGATION & HERO BANNER
+# 3. TOP NAVIGATION & HERO SECTION
 # -----------------------------------------------------------------------------
 st.markdown("""
 <div class="top-nav">
-    <div class="nav-logo">BridgeAI<span style="font-size:0.8rem; vertical-align:super;">™</span></div>
+    <div class="nav-logo">BridgeAI<span style="font-size:0.75rem; vertical-align:super;">™</span></div>
     <div class="nav-menu">
-        <span style="color: #224229; font-weight:600; text-decoration:underline;">Mission</span>
+        <span style="color: #1C3825; font-weight:700; text-decoration: underline; text-underline-offset: 4px;">Mission</span>
         <span>How it Works</span>
         <span>Pricing</span>
-        <a href="#chat" class="nav-pill-btn">Ask Question</a>
+        <a href="#chat" class="nav-pill-btn">Book a Demo</a>
     </div>
-    <div style="font-size: 0.85rem; color: #526356; font-weight:500;">
-        Groq Engine &nbsp;→&nbsp; <span style="font-weight:600; color:#224229;">Llama 3.3 Active</span>
+    <div style="font-size: 0.85rem; color: #556B5C; font-weight:500;">
+        New Account &nbsp;|&nbsp; <strong>Login</strong>
     </div>
 </div>
 
@@ -169,13 +212,13 @@ st.markdown("""
         Bridge the gap <span>between</span><br>data and decisions
     </div>
     <div class="hero-subtitle">
-        Turn disconnected data and documents into ultra-fast actionable insights with Groq-powered AI.
+        Turn disconnected data and documents into actionable insights with AI-powered automation.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 4. EMBEDDINGS LOADER (FastEmbed: Fast & Cloud-Safe)
+# 4. FAST & CRASH-PROOF EMBEDDING MODEL
 # -----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
 def load_embedding_model():
@@ -184,10 +227,10 @@ def load_embedding_model():
 embed_model = load_embedding_model()
 
 # -----------------------------------------------------------------------------
-# 5. VECTOR STORE & RETRIEVER CLASSES
+# 5. VECTOR STORE & RETRIEVER
 # -----------------------------------------------------------------------------
 class VectorStore:
-    def __init__(self, persist_directory: str = "./chroma_db", collection_name: str = "pdf_docs"):
+    def __init__(self, persist_directory: str = "./chroma_db", collection_name: str = "bridge_docs"):
         import chromadb
         self.client = chromadb.PersistentClient(path=persist_directory)
         try:
@@ -213,7 +256,7 @@ class VectorStore:
                         metadata[key] = value
                     elif value is not None:
                         metadata[key] = str(value)
-                metas.append(metadata or {"source_file": "unknown"})
+                metas.append(metadata or {"source_file": "document.pdf"})
                 embs.append(list(emb))
             self.collection.add(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
@@ -252,25 +295,24 @@ class RAGRetriever:
         return found
 
 # -----------------------------------------------------------------------------
-# 6. SIDEBAR SETTINGS (GROQ)
+# 6. SIDEBAR CONTROLS (Clean High Contrast)
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🌿 **Groq Engine Setup**")
+    st.markdown("### 🌿 **BridgeCore™ Engine**")
     
     groq_api_key = st.text_input(
         "Groq API Key",
         type="password",
         value=os.getenv("GROQ_API_KEY", ""),
-        help="Get your key at https://console.groq.com"
+        help="Get your free key at https://console.groq.com"
     )
 
     model_name = st.selectbox(
-        "Groq Model",
+        "LLM Model",
         options=[
             "llama-3.3-70b-versatile",
             "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768",
-            "gemma2-9b-it"
+            "mixtral-8x7b-32768"
         ],
         index=0
     )
@@ -286,15 +328,15 @@ with st.sidebar:
     )
 
     with st.expander("⚙️ Advanced Parameters"):
-        top_k = st.slider("Top-K Passages", min_value=1, max_value=8, value=4)
-        min_score = st.slider("Min Relevance Threshold", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
+        top_k = st.slider("Passages (Top-K)", min_value=1, max_value=8, value=4)
+        min_score = st.slider("Min Relevance", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
         chunk_size = st.number_input("Chunk Size", value=900, step=100)
-        chunk_overlap = st.number_input("Chunk Overlap", value=150, step=25)
+        chunk_overlap = st.number_input("Overlap", value=150, step=25)
 
     process_btn = st.button("Index Documents", use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# 7. DOCUMENT INGESTION PIPELINE
+# 7. DOCUMENT INGESTION
 # -----------------------------------------------------------------------------
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
@@ -302,9 +344,9 @@ if "vectorstore" not in st.session_state:
 
 if process_btn:
     if not uploaded_files:
-        st.sidebar.error("Please upload at least one PDF.")
+        st.sidebar.error("Please upload at least one PDF file.")
     else:
-        with st.spinner("Analyzing & Indexing documents..."):
+        with st.spinner("Processing & Indexing PDFs..."):
             all_pages = []
             with tempfile.TemporaryDirectory() as tmp_dir:
                 for uploaded_file in uploaded_files:
@@ -318,7 +360,7 @@ if process_btn:
                             p.metadata["source_file"] = uploaded_file.name
                         all_pages.extend(pages)
                     except Exception as e:
-                        st.error(f"Error loading {uploaded_file.name}: {e}")
+                        st.error(f"Error reading {uploaded_file.name}: {e}")
 
             if all_pages:
                 splitter = RecursiveCharacterTextSplitter(
@@ -336,7 +378,7 @@ if process_btn:
 
                 st.session_state.vectorstore = vectorstore
                 st.session_state.retriever = RAGRetriever(vectorstore, embed_model)
-                st.sidebar.success(f"🌿 Successfully indexed {len(chunks)} chunks from {len(all_pages)} pages!")
+                st.sidebar.success(f"🌿 Indexed {len(chunks)} chunks from {len(all_pages)} pages!")
 
 # -----------------------------------------------------------------------------
 # 8. CHAT INTERFACE
@@ -344,7 +386,7 @@ if process_btn:
 if "messages" not in st.session_state:
     st.session_state.messages = []
 
-# Display conversation history
+# Display conversation
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
@@ -352,12 +394,12 @@ for message in st.session_state.messages:
             chips_html = "".join(
                 [f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"]*100)}%</span>' for s in message["sources"]]
             )
-            st.markdown(f"<div style='margin-top:8px;'>{chips_html}</div>", unsafe_allow_html=True)
+            st.markdown(f"<div style='margin-top:6px;'>{chips_html}</div>", unsafe_allow_html=True)
 
-# User Query input
-if prompt := st.chat_input("Ask any question grounded in your PDF documents..."):
+# Chat Input
+if prompt := st.chat_input("Ask any question grounded in your documents..."):
     if not st.session_state.retriever:
-        st.warning("Please upload and index documents in the sidebar first.")
+        st.warning("Please upload and index PDF documents first in the sidebar.")
     else:
         st.session_state.messages.append({"role": "user", "content": prompt})
         with st.chat_message("user"):
@@ -368,7 +410,7 @@ if prompt := st.chat_input("Ask any question grounded in your PDF documents...")
             results = retriever.retrieve(prompt, top_k=top_k, score_threshold=min_score)
 
             if not results:
-                answer = "I couldn't find any relevant sections in your indexed files to answer that."
+                answer = "I couldn't find any relevant answers in your indexed documents."
                 sources = []
                 st.markdown(answer)
             else:
@@ -379,7 +421,7 @@ if prompt := st.chat_input("Ask any question grounded in your PDF documents...")
 
                 sources = [
                     {
-                        "source": r["metadata"].get("source_file", "unknown"),
+                        "source": r["metadata"].get("source_file", "document.pdf"),
                         "page": r["metadata"].get("page", 0) + 1 if isinstance(r["metadata"].get("page"), int) else r["metadata"].get("page", "1"),
                         "similarity": round(r["similarity_score"], 3)
                     }
@@ -391,23 +433,22 @@ if prompt := st.chat_input("Ask any question grounded in your PDF documents...")
                     st.markdown(answer)
                 else:
                     try:
-                        llm = ChatGroq(
-                            api_key=groq_api_key,
+                        client = Groq(api_key=groq_api_key)
+                        
+                        system_prompt = "You are BridgeAI, an enterprise document intelligence assistant. Answer questions truthfully and accurately using ONLY the provided context. If the context does not contain the answer, say that you don't have enough information."
+                        user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}"
+                        
+                        completion = client.chat.completions.create(
                             model=model_name,
+                            messages=[
+                                {"role": "system", "content": system_prompt},
+                                {"role": "user", "content": user_content}
+                            ],
                             temperature=temperature,
                             max_tokens=1024
                         )
 
-                        rag_prompt = f"""You are BridgeAI, a professional enterprise knowledge assistant. Answer the user question accurately using ONLY the context provided below. If the answer is not present, state that clearly without guessing.
-
-Context:
-{context}
-
-Question: {prompt}
-
-Answer:"""
-                        response = llm.invoke(rag_prompt)
-                        answer = response.content
+                        answer = completion.choices[0].message.content
                         st.markdown(answer)
 
                     except Exception as e:
@@ -418,7 +459,7 @@ Answer:"""
                     chips_html = "".join(
                         [f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"]*100)}%</span>' for s in sources]
                     )
-                    st.markdown(f"<div style='margin-top:8px;'>{chips_html}</div>", unsafe_allow_html=True)
+                    st.markdown(f"<div style='margin-top:6px;'>{chips_html}</div>", unsafe_allow_html=True)
 
             st.session_state.messages.append({
                 "role": "assistant",
