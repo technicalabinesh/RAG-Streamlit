@@ -3,27 +3,27 @@ import uuid
 import tempfile
 import streamlit as st
 from pathlib import Path
-from sentence_transformers import SentenceTransformer
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from langchain_openai import ChatOpenAI
+from langchain_groq import ChatGroq
+from fastembed import TextEmbedding
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
 # -----------------------------------------------------------------------------
 st.set_page_config(
-    page_title="BridgeAI — Data & Document Intelligence",
+    page_title="BridgeAI — Groq Data & Document Intelligence",
     page_icon="🌿",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
 # -----------------------------------------------------------------------------
-# 2. BRIDGEAI STYLING & DESIGN THEME (CSS)
+# 2. BRIDGEAI STYLING & THEME (CSS)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Playfair+Display:ital,wght@0,500;0,600;1,400&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
 
     :root {
         --primary-green: #224229;
@@ -33,10 +33,8 @@ st.markdown("""
         --card-bg: rgba(255, 255, 255, 0.75);
         --text-dark: #19241C;
         --text-muted: #526356;
-        --pill-bg: #FFFFFF;
     }
 
-    /* Base App Styling */
     .stApp {
         background: radial-gradient(circle at 50% 10%, #E7EDE0 0%, #F5F7F2 60%, #EBF0E6 100%);
         font-family: 'Plus Jakarta Sans', sans-serif;
@@ -81,12 +79,6 @@ st.markdown("""
         text-decoration: none;
         font-weight: 600;
         font-size: 0.85rem;
-        transition: all 0.2s ease;
-    }
-
-    .nav-pill-btn:hover {
-        background: var(--accent-green) !important;
-        transform: translateY(-1px);
     }
 
     /* Hero Section */
@@ -98,7 +90,7 @@ st.markdown("""
     }
 
     .hero-title {
-        font-size: 3.4rem;
+        font-size: 3.2rem;
         font-weight: 700;
         line-height: 1.15;
         letter-spacing: -1.5px;
@@ -117,21 +109,8 @@ st.markdown("""
         max-width: 620px;
         margin: 0 auto 2rem auto;
         line-height: 1.6;
-        font-weight: 400;
     }
 
-    /* Glass Cards */
-    .glass-card {
-        background: var(--card-bg);
-        border: 1px solid rgba(255, 255, 255, 0.8);
-        box-shadow: 0 10px 30px rgba(34, 66, 41, 0.05);
-        backdrop-filter: blur(10px);
-        border-radius: 20px;
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-    }
-
-    /* Streamlit Custom UI Overrides */
     .stSidebar {
         background-color: #EBF0E6 !important;
         border-right: 1px solid rgba(34, 66, 41, 0.08);
@@ -144,17 +123,8 @@ st.markdown("""
         border: none !important;
         padding: 0.55rem 1.4rem !important;
         font-weight: 600 !important;
-        letter-spacing: -0.2px;
-        transition: all 0.2s ease-in-out;
     }
 
-    div[data-testid="stButton"] > button:hover {
-        background-color: var(--accent-green) !important;
-        transform: translateY(-1px);
-        box-shadow: 0 4px 14px rgba(34, 66, 41, 0.2);
-    }
-
-    /* Chat Messages Styling */
     div[data-testid="stChatMessage"] {
         background: rgba(255, 255, 255, 0.8) !important;
         border-radius: 16px !important;
@@ -190,7 +160,7 @@ st.markdown("""
         <a href="#chat" class="nav-pill-btn">Ask Question</a>
     </div>
     <div style="font-size: 0.85rem; color: #526356; font-weight:500;">
-        PDF Workspace &nbsp;→&nbsp; <span style="font-weight:600; color:#224229;">Active</span>
+        Groq Engine &nbsp;→&nbsp; <span style="font-weight:600; color:#224229;">Llama 3.3 Active</span>
     </div>
 </div>
 
@@ -199,19 +169,19 @@ st.markdown("""
         Bridge the gap <span>between</span><br>data and decisions
     </div>
     <div class="hero-subtitle">
-        Turn disconnected PDF data and documents into actionable insights with AI-powered document intelligence.
+        Turn disconnected data and documents into ultra-fast actionable insights with Groq-powered AI.
     </div>
 </div>
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 4. CACHED EMBEDDINGS MODEL
+# 4. EMBEDDINGS LOADER (FastEmbed: Fast & Cloud-Safe)
 # -----------------------------------------------------------------------------
 @st.cache_resource(show_spinner=False)
-def get_embedding_model():
-    return SentenceTransformer("all-MiniLM-L6-v2")
+def load_embedding_model():
+    return TextEmbedding(model_name="BAAI/bge-small-en-v1.5")
 
-embedding_model = get_embedding_model()
+embed_model = load_embedding_model()
 
 # -----------------------------------------------------------------------------
 # 5. VECTOR STORE & RETRIEVER CLASSES
@@ -229,7 +199,7 @@ class VectorStore:
             metadata={"hnsw:space": "cosine"}
         )
 
-    def add_documents(self, documents, embeddings, batch_size=500):
+    def add_documents(self, documents, embeddings, batch_size=200):
         for start in range(0, len(documents), batch_size):
             batch_docs = documents[start:start + batch_size]
             batch_embs = embeddings[start:start + batch_size]
@@ -244,19 +214,19 @@ class VectorStore:
                     elif value is not None:
                         metadata[key] = str(value)
                 metas.append(metadata or {"source_file": "unknown"})
-                embs.append(emb.tolist())
+                embs.append(list(emb))
             self.collection.add(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
 class RAGRetriever:
-    def __init__(self, vector_store: VectorStore, model: SentenceTransformer):
+    def __init__(self, vector_store: VectorStore, embed_model):
         self.vector_store = vector_store
-        self.model = model
+        self.embed_model = embed_model
 
     def retrieve(self, query: str, top_k: int = 4, score_threshold: float = 0.0):
         if not query.strip() or self.vector_store.collection.count() == 0:
             return []
 
-        query_embedding = self.model.encode([query], convert_to_numpy=True)[0].tolist()
+        query_embedding = list(list(self.embed_model.embed([query]))[0])
         result = self.vector_store.collection.query(
             query_embeddings=[query_embedding],
             n_results=min(top_k, self.vector_store.collection.count()),
@@ -282,30 +252,30 @@ class RAGRetriever:
         return found
 
 # -----------------------------------------------------------------------------
-# 6. SIDEBAR CONFIGURATION (CHATGPT / OPENAI)
+# 6. SIDEBAR SETTINGS (GROQ)
 # -----------------------------------------------------------------------------
 with st.sidebar:
-    st.markdown("### 🌿 **BridgeCore™ Setup**")
+    st.markdown("### 🌿 **Groq Engine Setup**")
     
-    openai_api_key = st.text_input(
-        "OpenAI API Key",
+    groq_api_key = st.text_input(
+        "Groq API Key",
         type="password",
-        value=os.getenv("OPENAI_API_KEY", ""),
-        help="Enter your OpenAI API key starting with 'sk-'"
+        value=os.getenv("GROQ_API_KEY", ""),
+        help="Get your key at https://console.groq.com"
     )
 
-    chatgpt_model = st.selectbox(
-        "ChatGPT Engine",
+    model_name = st.selectbox(
+        "Groq Model",
         options=[
-            "gpt-4o-mini",
-            "gpt-4o",
-            "gpt-4-turbo",
-            "gpt-3.5-turbo"
+            "llama-3.3-70b-versatile",
+            "llama-3.1-8b-instant",
+            "mixtral-8x7b-32768",
+            "gemma2-9b-it"
         ],
         index=0
     )
 
-    temperature = st.slider("Creativity (Temperature)", min_value=0.0, max_value=1.0, value=0.1, step=0.05)
+    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.1, step=0.05)
 
     st.markdown("---")
     st.markdown("#### 📁 **Document Repository**")
@@ -315,8 +285,8 @@ with st.sidebar:
         accept_multiple_files=True
     )
 
-    with st.expander("⚙️ Advanced Retrieval Parameters"):
-        top_k = st.slider("Context Chunks (Top-K)", min_value=1, max_value=8, value=4)
+    with st.expander("⚙️ Advanced Parameters"):
+        top_k = st.slider("Top-K Passages", min_value=1, max_value=8, value=4)
         min_score = st.slider("Min Relevance Threshold", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
         chunk_size = st.number_input("Chunk Size", value=900, step=100)
         chunk_overlap = st.number_input("Chunk Overlap", value=150, step=25)
@@ -358,17 +328,18 @@ if process_btn:
                 )
                 chunks = splitter.split_documents(all_pages)
                 texts = [doc.page_content for doc in chunks]
-                embeddings = embedding_model.encode(texts, show_progress_bar=False, convert_to_numpy=True)
+
+                embeddings = list(embed_model.embed(texts))
 
                 vectorstore = VectorStore()
                 vectorstore.add_documents(chunks, embeddings)
 
                 st.session_state.vectorstore = vectorstore
-                st.session_state.retriever = RAGRetriever(vectorstore, embedding_model)
+                st.session_state.retriever = RAGRetriever(vectorstore, embed_model)
                 st.sidebar.success(f"🌿 Successfully indexed {len(chunks)} chunks from {len(all_pages)} pages!")
 
 # -----------------------------------------------------------------------------
-# 8. CHAT CONVERSATION INTERFACE
+# 8. CHAT INTERFACE
 # -----------------------------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -415,18 +386,16 @@ if prompt := st.chat_input("Ask any question grounded in your PDF documents...")
                     for r in results
                 ]
 
-                if not openai_api_key.strip():
-                    answer = (
-                        "⚠️ **OpenAI API Key is missing.** Passages retrieved, but ChatGPT answer generation requires a key in the sidebar."
-                    )
+                if not groq_api_key.strip():
+                    answer = "⚠️ **Groq API Key is missing.** Please provide your key in the sidebar."
                     st.markdown(answer)
                 else:
                     try:
-                        llm = ChatOpenAI(
-                            api_key=openai_api_key,
-                            model=chatgpt_model,
+                        llm = ChatGroq(
+                            api_key=groq_api_key,
+                            model=model_name,
                             temperature=temperature,
-                            max_tokens=1000
+                            max_tokens=1024
                         )
 
                         rag_prompt = f"""You are BridgeAI, a professional enterprise knowledge assistant. Answer the user question accurately using ONLY the context provided below. If the answer is not present, state that clearly without guessing.
@@ -442,7 +411,7 @@ Answer:"""
                         st.markdown(answer)
 
                     except Exception as e:
-                        answer = f"❌ OpenAI Error: {e}"
+                        answer = f"❌ Groq Error: {e}"
                         st.error(answer)
 
                 if sources:
