@@ -5,6 +5,9 @@ import shutil
 import atexit
 from pathlib import Path
 
+import logging
+logging.getLogger("pypdf").setLevel(logging.ERROR)
+
 import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
