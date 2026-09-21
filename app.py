@@ -1,12 +1,22 @@
 import os
 import uuid
 import tempfile
-import streamlit as st
+import shutil
+import atexit
 from pathlib import Path
+
+import streamlit as st
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from fastembed import TextEmbedding
 from groq import Groq
+
+try:
+    import chromadb
+except ImportError as e:
+    raise ImportError(
+        "chromadb is required for this app. Install it with `pip install chromadb`."
+    ) from e
 
 # -----------------------------------------------------------------------------
 # 1. PAGE CONFIGURATION
@@ -34,7 +44,7 @@ st.markdown("""
 
     /* Background Landscape Glow */
     .stApp {
-        background: 
+        background:
             radial-gradient(ellipse at 50% 20%, rgba(255, 255, 255, 0.92) 0%, rgba(244, 246, 240, 0.95) 65%, rgba(226, 235, 222, 0.98) 100%) !important;
     }
 
@@ -114,7 +124,7 @@ st.markdown("""
         background-color: #E8EDE1 !important;
         border-right: 1px solid rgba(46, 80, 56, 0.12) !important;
     }
-    
+
     section[data-testid="stSidebar"] * {
         color: #1A3323 !important;
     }
@@ -264,16 +274,38 @@ def load_embedding_model():
 embed_model = load_embedding_model()
 
 # -----------------------------------------------------------------------------
-# 5. VECTOR STORE & RETRIEVER
+# 5. SESSION-SCOPED STORAGE
+#
+# Each browser session gets its own Chroma persist directory and its own
+# collection name. This prevents one user's "Index Documents" click from
+# deleting or overwriting another user's indexed data when the app is
+# deployed for more than one concurrent user, and avoids stale collections
+# piling up on disk across app restarts.
+# -----------------------------------------------------------------------------
+if "session_id" not in st.session_state:
+    st.session_state.session_id = uuid.uuid4().hex
+
+if "chroma_dir" not in st.session_state:
+    chroma_dir = os.path.join(tempfile.gettempdir(), f"bridgeai_chroma_{st.session_state.session_id}")
+    os.makedirs(chroma_dir, exist_ok=True)
+    st.session_state.chroma_dir = chroma_dir
+
+    # Best-effort cleanup when the Python process exits. This won't fire on
+    # every Streamlit deployment model (e.g. some hosts kill workers hard),
+    # but it prevents obvious leakage during normal local/dev usage.
+    def _cleanup(path=chroma_dir):
+        shutil.rmtree(path, ignore_errors=True)
+    atexit.register(_cleanup)
+
+# -----------------------------------------------------------------------------
+# 6. VECTOR STORE & RETRIEVER
 # -----------------------------------------------------------------------------
 class VectorStore:
-    def __init__(self, persist_directory: str = "./chroma_db", collection_name: str = "bridge_docs"):
-        import chromadb
+    def __init__(self, persist_directory: str, collection_name: str):
         self.client = chromadb.PersistentClient(path=persist_directory)
-        try:
-            self.client.delete_collection(collection_name)
-        except Exception:
-            pass
+        # Fresh collection name is generated per index run (see below), so
+        # there is nothing to delete here — no risk of clobbering another
+        # session's or another run's data.
         self.collection = self.client.create_collection(
             name=collection_name,
             metadata={"hnsw:space": "cosine"}
@@ -285,7 +317,7 @@ class VectorStore:
             batch_embs = embeddings[start:start + batch_size]
             ids, texts, metas, embs = [], [], [], []
             for offset, (doc, emb) in enumerate(zip(batch_docs, batch_embs)):
-                ids.append(f"chunk_{start+offset}_{uuid.uuid4().hex[:8]}")
+                ids.append(f"chunk_{start + offset}_{uuid.uuid4().hex[:8]}")
                 texts.append(doc.page_content)
                 metadata = {}
                 for key, value in doc.metadata.items():
@@ -297,16 +329,22 @@ class VectorStore:
                 embs.append(list(emb))
             self.collection.add(ids=ids, documents=texts, metadatas=metas, embeddings=embs)
 
+
 class RAGRetriever:
     def __init__(self, vector_store: VectorStore, embed_model):
         self.vector_store = vector_store
         self.embed_model = embed_model
 
     def retrieve(self, query: str, top_k: int = 4, score_threshold: float = 0.0):
-        if not query.strip() or self.vector_store.collection.count() == 0:
+        query = query.strip()
+        if not query or self.vector_store.collection.count() == 0:
             return []
 
-        query_embedding = list(list(self.embed_model.embed([query]))[0])
+        embeddings = list(self.embed_model.embed([query]))
+        if not embeddings:
+            return []
+        query_embedding = embeddings[0].tolist() if hasattr(embeddings[0], "tolist") else list(embeddings[0])
+
         result = self.vector_store.collection.query(
             query_embeddings=[query_embedding],
             n_results=min(top_k, self.vector_store.collection.count()),
@@ -332,11 +370,23 @@ class RAGRetriever:
         return found
 
 # -----------------------------------------------------------------------------
-# 6. SIDEBAR CONTROLS
+# 7. SIDEBAR CONTROLS
 # -----------------------------------------------------------------------------
+# NOTE ON MODELS: mixtral-8x7b-32768 has long been removed from Groq, and
+# both llama-3.1-8b-instant and llama-3.3-70b-versatile were deprecated and
+# shut down by Groq on 2026-08-16. Using any of the three original model IDs
+# will make every chat request fail. Current, non-deprecated options below
+# per https://console.groq.com/docs/deprecations and /docs/models — re-check
+# that page periodically, since Groq's lineup changes often.
+GROQ_MODEL_OPTIONS = [
+    "openai/gpt-oss-120b",
+    "openai/gpt-oss-20b",
+    "qwen/qwen3.6-27b",
+]
+
 with st.sidebar:
     st.markdown("### 🌿 **BridgeCore™ Engine**")
-    
+
     groq_api_key = st.text_input(
         "Groq API Key",
         type="password",
@@ -346,12 +396,10 @@ with st.sidebar:
 
     model_name = st.selectbox(
         "LLM Model",
-        options=[
-            "llama-3.3-70b-versatile",
-            "llama-3.1-8b-instant",
-            "mixtral-8x7b-32768"
-        ],
-        index=0
+        options=GROQ_MODEL_OPTIONS,
+        index=0,
+        help="List trimmed to models Groq currently serves. Check "
+             "console.groq.com/docs/models if you need something else."
     )
 
     temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.1, step=0.05)
@@ -367,13 +415,13 @@ with st.sidebar:
     with st.expander("⚙️ Advanced Parameters"):
         top_k = st.slider("Passages (Top-K)", min_value=1, max_value=8, value=4)
         min_score = st.slider("Min Relevance", min_value=0.0, max_value=1.0, value=0.0, step=0.05)
-        chunk_size = st.number_input("Chunk Size", value=900, step=100)
-        chunk_overlap = st.number_input("Overlap", value=150, step=25)
+        chunk_size = st.number_input("Chunk Size", min_value=100, value=900, step=100)
+        chunk_overlap = st.number_input("Overlap", min_value=0, value=150, step=25)
 
     process_btn = st.button("Index Documents", use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# 7. DOCUMENT INGESTION
+# 8. DOCUMENT INGESTION
 # -----------------------------------------------------------------------------
 if "vectorstore" not in st.session_state:
     st.session_state.vectorstore = None
@@ -382,6 +430,8 @@ if "vectorstore" not in st.session_state:
 if process_btn:
     if not uploaded_files:
         st.sidebar.error("Please upload at least one PDF file.")
+    elif chunk_overlap >= chunk_size:
+        st.sidebar.error("Overlap must be smaller than Chunk Size.")
     else:
         with st.spinner("Processing & Indexing PDFs..."):
             all_pages = []
@@ -399,26 +449,49 @@ if process_btn:
                     except Exception as e:
                         st.error(f"Error reading {uploaded_file.name}: {e}")
 
-            if all_pages:
+            # Drop pages with no extractable text (e.g. scanned/image-only
+            # PDFs with no OCR layer) before they reach the splitter/embedder.
+            usable_pages = [p for p in all_pages if p.page_content and p.page_content.strip()]
+            skipped = len(all_pages) - len(usable_pages)
+
+            if not all_pages:
+                st.sidebar.error("No pages could be read from the uploaded file(s).")
+            elif not usable_pages:
+                st.sidebar.error(
+                    "No extractable text found in the uploaded PDF(s). "
+                    "They may be scanned images without an OCR text layer."
+                )
+            else:
+                if skipped:
+                    st.sidebar.warning(f"Skipped {skipped} page(s) with no extractable text.")
+
                 splitter = RecursiveCharacterTextSplitter(
                     chunk_size=chunk_size,
                     chunk_overlap=chunk_overlap,
                     separators=["\n\n", "\n", " ", ""]
                 )
-                chunks = splitter.split_documents(all_pages)
-                texts = [doc.page_content for doc in chunks]
+                chunks = splitter.split_documents(usable_pages)
+                chunks = [c for c in chunks if c.page_content and c.page_content.strip()]
 
-                embeddings = list(embed_model.embed(texts))
+                if not chunks:
+                    st.sidebar.error("Splitting produced no usable chunks.")
+                else:
+                    texts = [doc.page_content for doc in chunks]
+                    embeddings = list(embed_model.embed(texts))
 
-                vectorstore = VectorStore()
-                vectorstore.add_documents(chunks, embeddings)
+                    # Fresh collection name per index run avoids any collision
+                    # with a previous run's data still being read by a
+                    # slow-finishing request elsewhere in the same session.
+                    collection_name = f"bridge_docs_{uuid.uuid4().hex[:8]}"
+                    vectorstore = VectorStore(st.session_state.chroma_dir, collection_name)
+                    vectorstore.add_documents(chunks, embeddings)
 
-                st.session_state.vectorstore = vectorstore
-                st.session_state.retriever = RAGRetriever(vectorstore, embed_model)
-                st.sidebar.success(f"🌿 Indexed {len(chunks)} chunks from {len(all_pages)} pages!")
+                    st.session_state.vectorstore = vectorstore
+                    st.session_state.retriever = RAGRetriever(vectorstore, embed_model)
+                    st.sidebar.success(f"🌿 Indexed {len(chunks)} chunks from {len(usable_pages)} pages!")
 
 # -----------------------------------------------------------------------------
-# 8. CHAT INTERFACE
+# 9. CHAT INTERFACE
 # -----------------------------------------------------------------------------
 if "messages" not in st.session_state:
     st.session_state.messages = []
@@ -427,22 +500,25 @@ if "messages" not in st.session_state:
 for message in st.session_state.messages:
     with st.chat_message(message["role"]):
         st.markdown(message["content"])
-        if "sources" in message and message["sources"]:
+        if message.get("sources"):
             chips_html = "".join(
-                [f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"]*100)}%</span>' for s in message["sources"]]
+                f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"] * 100)}%</span>'
+                for s in message["sources"]
             )
             st.markdown(f"<div style='margin-top:6px;'>{chips_html}</div>", unsafe_allow_html=True)
 
 # Chat Input Box
 if prompt := st.chat_input("Ask any question grounded in your documents..."):
-    if not st.session_state.retriever:
-        st.warning("Please upload and index PDF documents first in the sidebar.")
-    else:
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
 
-        with st.chat_message("assistant"):
+    with st.chat_message("assistant"):
+        if not st.session_state.retriever:
+            answer = "Please upload and index PDF documents first in the sidebar."
+            sources = []
+            st.warning(answer)
+        else:
             retriever = st.session_state.retriever
             results = retriever.retrieve(prompt, top_k=top_k, score_threshold=min_score)
 
@@ -459,7 +535,7 @@ if prompt := st.chat_input("Ask any question grounded in your documents..."):
                 sources = [
                     {
                         "source": r["metadata"].get("source_file", "document.pdf"),
-                        "page": r["metadata"].get("page", 0) + 1 if isinstance(r["metadata"].get("page"), int) else r["metadata"].get("page", "1"),
+                        "page": (r["metadata"].get("page", 0) + 1) if isinstance(r["metadata"].get("page"), int) else r["metadata"].get("page", "1"),
                         "similarity": round(r["similarity_score"], 3)
                     }
                     for r in results
@@ -467,14 +543,19 @@ if prompt := st.chat_input("Ask any question grounded in your documents..."):
 
                 if not groq_api_key.strip():
                     answer = "⚠️ **Groq API Key is missing.** Please provide your key in the sidebar."
+                    sources = []
                     st.markdown(answer)
                 else:
                     try:
                         client = Groq(api_key=groq_api_key)
-                        
-                        system_prompt = "You are BridgeAI, an enterprise document intelligence assistant. Answer questions truthfully and accurately using ONLY the provided context. If the context does not contain the answer, say that you don't have enough information."
+
+                        system_prompt = (
+                            "You are BridgeAI, an enterprise document intelligence assistant. "
+                            "Answer questions truthfully and accurately using ONLY the provided context. "
+                            "If the context does not contain the answer, say that you don't have enough information."
+                        )
                         user_content = f"Context:\n{context}\n\nQuestion:\n{prompt}"
-                        
+
                         completion = client.chat.completions.create(
                             model=model_name,
                             messages=[
@@ -485,21 +566,29 @@ if prompt := st.chat_input("Ask any question grounded in your documents..."):
                             max_tokens=1024
                         )
 
-                        answer = completion.choices[0].message.content
+                        choices = getattr(completion, "choices", None)
+                        if not choices:
+                            answer = "⚠️ Groq returned an empty response. Please try again."
+                            sources = []
+                        else:
+                            answer = choices[0].message.content or "⚠️ Groq returned an empty message."
+
                         st.markdown(answer)
 
                     except Exception as e:
                         answer = f"❌ Groq Error: {e}"
+                        sources = []
                         st.error(answer)
 
                 if sources:
                     chips_html = "".join(
-                        [f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"]*100)}%</span>' for s in sources]
+                        f'<span class="source-chip">📄 {s["source"]} (p. {s["page"]}) — {int(s["similarity"] * 100)}%</span>'
+                        for s in sources
                     )
                     st.markdown(f"<div style='margin-top:6px;'>{chips_html}</div>", unsafe_allow_html=True)
 
-            st.session_state.messages.append({
-                "role": "assistant",
-                "content": answer,
-                "sources": sources
-            })
+        st.session_state.messages.append({
+            "role": "assistant",
+            "content": answer,
+            "sources": sources
+        })
